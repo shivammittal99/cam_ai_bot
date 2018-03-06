@@ -14,7 +14,7 @@ var fs = require('fs');
 var http = require('http');
 // Setup Restify Server
 var server = restify.createServer();
-server.listen(process.env.port || process.env.PORT || 3978, function () {
+server.listen(process.env.port || process.env.PORT || 3978, () => {
    console.log('%s listening to %s', server.name, server.url); 
 });
   
@@ -28,20 +28,6 @@ var connector = new builder.ChatConnector({
 // Listen for messages from users 
 server.post('/api/messages', connector.listen());
 
-/*----------------------------------------------------------------------------------------
-* Bot Storage: This is a great spot to register the private state storage for your bot. 
-* We provide adapters for Azure Table, CosmosDb, SQL Azure, or you can implement your own!
-* For samples and documentation, see: https://github.com/Microsoft/BotBuilder-Azure
-* ---------------------------------------------------------------------------------------- */
-
-var tableName = 'botdata';
-var azureTableClient = new botbuilder_azure.AzureTableClient(tableName, process.env['AzureWebJobsStorage']);
-var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azureTableClient);
-
-// Create your bot with a function to receive messages from the user
-var bot = new builder.UniversalBot(connector);
-bot.set('storage', tableStorage);
-
 // Make sure you add code to validate these fields
 var luisAppId = process.env.LuisAppId;
 var luisAPIKey = process.env.LuisAPIKey;
@@ -51,62 +37,93 @@ const LuisModelUrl = 'https://' + luisAPIHostName + '/luis/v1/application?id=' +
 
 // Main dialog with LUIS
 var recognizer = new builder.LuisRecognizer(LuisModelUrl);
-var intents = new builder.IntentDialog({ recognizers: [recognizer] })
-bot.dialog('/', [
-    function (session) {
-        //Trigger /askName dialog
-        console.log("here 0");
-        session.send('This is Creative Augmented Multimedia');
-        session.beginDialog('/askName');
+var intents = new builder.IntentDialog({ recognizers: [recognizer] });
+
+/*----------------------------------------------------------------------------------------
+* Bot Storage: This is a great spot to register the private state storage for your bot 
+* We provide adapters for Azure Table, CosmosDb, SQL Azure, or you can implement your own!
+* For samples and documentation, see: https://github.com/Microsoft/BotBuilder-Azure
+* ---------------------------------------------------------------------------------------- */
+
+var tableName = 'botdata';
+var azureTableClient = new botbuilder_azure.AzureTableClient(tableName, process.env['AzureWebJobsStorage']);
+var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azureTableClient);
+
+var inMemoryStorage = new builder.MemoryBotStorage();
+
+// Create your bot with a function to receive messages from the user
+var bot = new builder.UniversalBot(connector, (session) => {
+        if(session.userData.username) {
+            console.log('user exists');
+            session.beginDialog('/oldUser');
+        } else {
+            console.log('new user');
+            session.beginDialog('/newUser')
+        }
+    }
+).set('storage', inMemoryStorage);
+
+bot.dialog('/newUser', [
+    (session) => {
+        builder.Prompts.text(session, 'Hello. What should I call you?');
     },
-    function (session, results) {
-        //Return hello + user's input (name)
-                console.log("here 1");
-        console.log(results.response);
-        session.send('Hello %s!', results.response);
-        builder.Prompts.text(session,'I would like to show you something cool,just type something ');
+    (session, results) => {
+        session.userData.username = results.response;
+        session.save();
+        session.send('Hi %s. This is Creative Augmented Multimedia. I would like to show you something cool.', session.userData.username);
+        builder.Prompts.text(session, 'Type something.');
     },
-    function(session,results){
-                console.log("here 2");
-                console.log(results);   
-        var req = http.get(getUrl+"?str="+results.response,function(response){
-                                var body = "";
-                                //Read the data
-                                response.on('data', function(chunk) {
-                                  body += chunk;
-                                });
-                                response.on('end',function(){
-                                if(response.statusCode == 200){
-                                        var e = JSON.parse(body); 
-                                        console.dir(e);
-                                var msg = new builder.Message(session).addAttachment(    
-                                new builder.VideoCard(session)
-                                    .title('Smack')
-                                    .subtitle('by the Cam.AI Institute')
-                                    .text('')
-                                    .image(builder.CardImage.create(session, ''))
-                                    .media([
-                                        { url: e.url }
-                                    ])
-                                    .buttons([
-                                        builder.CardAction.openUrl(session, 'https://peach.blender.org/', 'Learn More')
-                                    ]));
-                                    session.send(msg);
-                                    } else {
-                                        console.log("There is  so much shit");
-                                    }
-                                });
-                                });
-    }    
-]);
-bot.dialog('/askName', [
-    function (session) {
-                console.log("here 3");
-        //Prompt for user input
-        builder.Prompts.text(session, 'Hi! What is your name?');
+    (session, results) => {
+        session.beginDialog('/main', results);
     }
 ]);
 
+bot.dialog('/oldUser', [
+    (session) => {
+        session.send('Hi %s. Welcome back!', session.userData.username);
+        builder.Prompts.text(session, 'Get started');
+    },
+    (session, results) => {
+        session.beginDialog('/main', results);
+    }
+]);
+
+bot.dialog('/main', [
+    (session,results) => {
+        results.response = results.response.replace("&apos;", "");
+        results.response = results.response.replace("&quot;", "");
+        results.response = results.response.replace(/[^0-9a-zA-Z\s]+/g,"");
+        var req = http.get(getUrl+"?str="+results.response, (response) => {
+            var body = "";
+            //Read the data
+            response.on('data', (chunk) => {
+                body += chunk;
+            });
+            response.on('end', () => {
+                if(response.statusCode == 200) {
+                        var e = JSON.parse(body); 
+                        console.dir(e);
+                var msg = new builder.Message(session).addAttachment(    
+                new builder.VideoCard(session)
+                    .title('CAM')
+                    .subtitle('by cam.ai.FortyTwo')
+                    .text('')
+                    .image(builder.CardImage.create(session, ''))
+                    .media([
+                        { url: e.url }
+                    ]));
+                    session.send(msg);
+                    builder.Prompts.text(session, 'Type something');
+                } else {
+                    console.log("Error occurred. Please try again.");
+                }
+            });            
+        })
+    },
+    (session, results) => {
+        session.replaceDialog('/main', results);
+    }   
+]);
 
 //=========================================================
 // Utilities
@@ -124,7 +141,7 @@ function getAudioStreamFromMessage(message) {
         // The Skype attachment URLs are secured by JwtToken,
         // you should set the JwtToken of your bot as the authorization header for the GET request your bot initiates to fetch the image.
         // https://github.com/Microsoft/BotBuilder/issues/662
-        connector.getAccessToken(function (error, token) {
+        connector.getAccessToken((error, token) => {
             var tok = token;
             headers['Authorization'] = 'Bearer ' + token;
             headers['Content-Type'] = 'application/octet-stream';
@@ -146,7 +163,7 @@ function processText(text) {
     var result = 'You said: ' + text + '.';
 
     if (text && text.length > 0) {
-        var wordCount = text.split(' ').filter(function (x) { return x; }).length;
+        var wordCount = text.split(' ').filter((x) => { return x; }).length;
         result += '\n\nWord Count: ' + wordCount;
 
         var characterCount = text.replace(/ /g, '').length;
@@ -166,7 +183,7 @@ function processText(text) {
 function downloadAttachments(connector, message, callback) {
     var attachments = [];
     var containsSkypeUrl = false;
-    message.attachments.forEach(function (attachment) {
+    message.attachments.forEach((attachment) => {
         if (attachment.contentUrl) {
             attachments.push({
                 contentType: attachment.contentType,
@@ -179,7 +196,7 @@ function downloadAttachments(connector, message, callback) {
     });
     if (attachments.length > 0) {
         async.waterfall([
-            function (cb) {
+            (cb) => {
                 if (containsSkypeUrl) {
                     connector.getAccessToken(cb);
                 }
@@ -187,10 +204,10 @@ function downloadAttachments(connector, message, callback) {
                     cb(null, null);
                 }
             }
-        ], function (err, token) {
+        ], (err, token) => {
             if (!err) {
                 var buffers = [];
-                async.forEachOf(attachments, function (item, idx, cb) {
+                async.forEachOf(attachments, (item, idx, cb) => {
                     var contentUrl = item.contentUrl;
                     var headers = {};
                     if (url.parse(contentUrl).hostname.substr(-"skype.com".length) == "skype.com") {
@@ -204,13 +221,13 @@ function downloadAttachments(connector, message, callback) {
                         url: contentUrl,
                         headers: headers,
                         encoding: null
-                    }, function (err, res, body) {
+                    }, (err, res, body) => {
                         if (!err && res.statusCode == 200) {
                             buffers.push(body);
                         }
                         cb(err);
                     });
-                }, function (err) {
+                }, (err) => {
                     if (callback)
                         callback(err, buffers);
                 });
