@@ -53,43 +53,49 @@ var inMemoryStorage = new builder.MemoryBotStorage();
 
 // Create your bot with a function to receive messages from the user
 var bot = new builder.UniversalBot(connector, (session) => {
-        if(session.userData.username) {
-            console.log('user exists');
-            session.beginDialog('/oldUser');
-        } else {
-            console.log('new user');
-            session.beginDialog('/newUser')
-        }
+    session.sendTyping();
+    if(session.userData.username) {
+        console.log('user exists');
+        session.beginDialog('/oldUser');
+    } else {
+        console.log('new user');
+        session.beginDialog('/newUser')
     }
-).set('storage', inMemoryStorage);
+}).set('storage', tableStorage);
 
 bot.dialog('/newUser', [
     (session) => {
+        session.sendTyping();
         builder.Prompts.text(session, 'Hello. What should I call you?');
     },
     (session, results) => {
+        session.sendTyping();
         session.userData.username = results.response;
         session.save();
         session.send('Hi %s. This is Creative Augmented Multimedia. I would like to show you something cool.', session.userData.username);
         builder.Prompts.text(session, 'Type something.');
     },
     (session, results) => {
+        session.sendTyping();
         session.beginDialog('/main', results);
     }
 ]);
 
 bot.dialog('/oldUser', [
     (session) => {
+        session.sendTyping();
         session.send('Hi %s. Welcome back!', session.userData.username);
         builder.Prompts.text(session, 'Get started');
     },
     (session, results) => {
+        session.sendTyping();
         session.beginDialog('/main', results);
     }
 ]);
 
 bot.dialog('/main', [
     (session,results) => {
+        session.sendTyping();
         results.response = results.response.replace("&apos;", "");
         results.response = results.response.replace("&quot;", "");
         results.response = results.response.replace(/[^0-9a-zA-Z\s]+/g,"");
@@ -121,6 +127,7 @@ bot.dialog('/main', [
         })
     },
     (session, results) => {
+        session.sendTyping();
         session.replaceDialog('/main', results);
     }   
 ]);
