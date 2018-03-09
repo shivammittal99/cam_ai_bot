@@ -57,19 +57,17 @@ var tableName = 'botdata';
 var azureTableClient = new botbuilder_azure.AzureTableClient(tableName, process.env['AzureWebJobsStorage']);
 var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azureTableClient);
 
-// var inMemoryStorage = new builder.MemoryBotStorage();
+var inMemoryStorage = new builder.MemoryBotStorage();
 
 // Create your bot with a function to receive messages from the user
 var bot = new builder.UniversalBot(connector, (session) => {
     session.sendTyping();
     if(session.userData.username) {
-        console.log('user exists');
         session.beginDialog('/oldUser');
     } else {
-        console.log('new user');
         session.beginDialog('/newUser')
     }
-}).set('storage', tableStorage);
+}).set('storage', inMemoryStorage);
 
 bot.dialog('/newUser', [
     (session) => {
@@ -102,7 +100,16 @@ bot.dialog('/oldUser', [
 ]);
 
 bot.dialog('/main', [
-    (session,results) => {
+    (session, results, next) => {
+        if(session.message.text == 'continue') {
+            builder.Prompts.text(session, 'Type something');
+        } else if(session.message.text == 'finish') {
+            session.endConversation('Goodbye');
+        } else {
+            next(results);
+        }
+    },
+    (session,results, next) => {
         session.sendTyping();
         results.response = results.response.replace("&apos;", "");
         results.response = results.response.replace("&quot;", "");
@@ -127,17 +134,25 @@ bot.dialog('/main', [
                         { url: e.url }
                     ]));
                     session.send(msg);
-                    builder.Prompts.text(session, 'Type something');
                 } else {
-                    console.log("Error occurred. Please try again.");
+                    session.send("Error occurred. Please try again.");
                 }
+                next();
             });            
         })
     },
-    (session, results) => {
-        session.sendTyping();
-        session.replaceDialog('/main', results);
-    }   
+    (session) => {
+        var msg = new builder.Message(session)
+        .text('What would you like to do now?')
+        .suggestedActions(
+            builder.SuggestedActions.create(
+                session, [
+                    builder.CardAction.postBack(session, "continue", "Give it another go"),
+                    builder.CardAction.postBack(session, "finish", "That's all for now")
+                ]
+        ));
+        session.send(msg);
+    }
 ]);
 
 //=========================================================
