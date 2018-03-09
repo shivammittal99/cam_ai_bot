@@ -25,13 +25,13 @@ var connector = new builder.ChatConnector({
     openIdMetadata: process.env.BotOpenIdMetadata 
 });
 
-setInterval(() => {
-    connector.getAccessToken((error) => {
-        console.log(JSON.stringify(error));
-    }, (token) => {
-        console.log('token refreshed: ${token}');
-    });
-}, 30*60*1000);
+// setInterval(() => {
+//     connector.getAccessToken((error) => {
+//         console.log(JSON.stringify(error));
+//     }, (token) => {
+//         console.log('token refreshed: ${token}');
+//     });
+// }, 30*60*1000);
 
 // Listen for messages from users 
 server.post('/api/messages', connector.listen());
@@ -57,7 +57,7 @@ var tableName = 'botdata';
 var azureTableClient = new botbuilder_azure.AzureTableClient(tableName, process.env['AzureWebJobsStorage']);
 var tableStorage = new botbuilder_azure.AzureBotStorage({ gzipData: false }, azureTableClient);
 
-var inMemoryStorage = new builder.MemoryBotStorage();
+// var inMemoryStorage = new builder.MemoryBotStorage();
 
 // Create your bot with a function to receive messages from the user
 var bot = new builder.UniversalBot(connector, (session) => {
@@ -67,7 +67,7 @@ var bot = new builder.UniversalBot(connector, (session) => {
     } else {
         session.beginDialog('/newUser')
     }
-}).set('storage', inMemoryStorage);
+}).set('storage', tableStorage);
 
 bot.dialog('/newUser', [
     (session) => {
